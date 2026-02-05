@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>PRO FLOW DASHBOARD</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        body { background-color: #050505; color: #e0e0e0; font-family: 'Segoe UI', monospace; margin: 0; overflow: hidden; }
+        #header { display: flex; background: #111; padding: 10px 20px; border-bottom: 2px solid #333; justify-content: space-between; align-items: center; }
+        .ticker { font-size: 24px; font-weight: bold; color: #00ff88; }
+        .stats-container { display: flex; gap: 30px; padding: 15px; background: #0a0a0a; }
+        .stat-box { border-left: 3px solid #444; padding-left: 15px; }
+        .stat-label { font-size: 10px; color: #888; text-transform: uppercase; }
+        .stat-value { font-size: 22px; font-weight: bold; }
+        .positive { color: #00ff88; text-shadow: 0 0 10px #00ff8855; }
+        .negative { color: #ff3366; text-shadow: 0 0 10px #ff336655; }
+        #main-chart { width: 100vw; height: calc(100vh - 120px); }
+    </style>
+</head>
+<body>
+    <div id="header">
+        <div class="ticker">NINJA_STREAM v1.0</div>
+        <div id="status" style="color: #ffaa00;">Aguardando NinjaTrader...</div>
+    </div>
+
+    <div class="stats-container">
+        <div class="stat-box">
+            <div class="stat-label">Preço Atual</div>
+            <div id="price" class="stat-value">0.00</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-label">Delta Acumulado</div>
+            <div id="delta" class="stat-value">0</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-label">Agressão</div>
+            <div id="agression" class="stat-value">--</div>
+        </div>
+    </div>
+
+    <div id="main-chart"></div>
+
+    <script>
+        let deltaAcumulado = 0;
+        const socket = new WebSocket('ws://localhost:8080/trade');
+        const statusEl = document.getElementById('status');
+
+        socket.onopen = () => { 
+            statusEl.innerText = "CONECTADO AO MERCADO";
+            statusEl.style.color = "#00ff88";
+        };
+
+        socket.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            
+            // Lógica de Delta (Tipo Capucci)
+            if(data.side === "Buy") {
+                deltaAcumulado += data.volume;
+                document.getElementById('agression').innerText = "COMPRA";
+                document.getElementById('agression').className = "stat-value positive";
+            } else {
+                deltaAcumulado -= data.volume;
+                document.getElementById('agression').innerText = "VENDA";
+                document.getElementById('agression').className = "stat-value negative";
+            }
+
+            document.getElementById('price').innerText = data.price.toFixed(2);
+            document.getElementById('delta').innerText = deltaAcumulado;
+            document.getElementById('delta').className = deltaAcumulado >= 0 ? "stat-value positive" : "stat-value negative";
+            
+            updateChart(data.price, deltaAcumulado);
+        };
+
+        // Configuração do Gráfico de Fluxo
+        const trace = { x: [], y: [], type: 'scatter', mode: 'lines', line: {color: '#00ff88', width: 2} };
+        const layout = { 
+            paper_bgcolor: '#050505', plot_bgcolor: '#050505',
+            xaxis: { color: '#444', gridcolor: '#111' },
+            yaxis: { color: '#444', gridcolor: '#111', side: 'right' },
+            margin: { t: 20, b: 40, l: 20, r: 50 }
+        };
+        Plotly.newPlot('main-chart', [trace], layout);
+
+        function updateChart(p, d) {
+            const time = new Date();
+            Plotly.extendTraces('main-chart', { x: [[time]], y: [[p]] }, [0]);
+            if(trace.x.length > 100) { // Mantém apenas os últimos 100 ticks
+                Plotly.relayout('main-chart', { 'xaxis.range': [trace.x[trace.x.length-100], time] });
+            }
+        }
+    </script>
+</body>
+</html>
